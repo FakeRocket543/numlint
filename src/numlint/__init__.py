@@ -18,7 +18,7 @@ Usage:
 
 from numlint.extract import extract_numbers, NumVal
 from numlint.verify import verify_numbers
-from numlint.currency import annotate_currency_twd as annotate_twd, convert_to_twd
+from numlint.currency import annotate_currency_twd as annotate_twd, convert_to_twd, convert_currency
 from numlint.finance import verify_financial_claims
 from numlint.measure import verify_measurements, annotate_metric
 from numlint.domain import verify_domain, verify_semiconductor, verify_weather, verify_calendar, verify_air_quality

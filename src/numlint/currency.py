@@ -1,4 +1,4 @@
-"""Currency conversion and TWD annotation."""
+"""Currency conversion and target-currency annotation."""
 import re
 import time
 import httpx
@@ -28,24 +28,24 @@ def _fetch_rates() -> dict:
     return _RATE_CACHE
 
 
-def convert_to_twd(value: float, from_currency: str) -> float | None:
+def convert_currency(value: float, from_currency: str, to_currency: str = "TWD") -> float | None:
     """Convert a value from given currency to TWD. Returns None if unavailable."""
     rates = _fetch_rates()
     if not rates:
         return None
-    twd_rate = rates.get("TWD")
-    if not twd_rate:
+    to_rate = rates.get(to_currency)
+    if not to_rate:
         return None
-    if from_currency == "TWD":
+    if from_currency == to_currency:
         return value
     if from_currency == "USD":
-        return value * twd_rate
+        return value * to_rate
     # Convert via USD: foreign → USD → TWD
     foreign_rate = rates.get(from_currency)
     if not foreign_rate:
         return None
     usd_value = value / foreign_rate
-    return usd_value * twd_rate
+    return usd_value * to_rate
 
 
 def annotate_currency_twd(zh_body: str) -> str:
@@ -100,3 +100,9 @@ def annotate_currency_twd(zh_body: str) -> str:
     
     return pattern.sub(_add_twd, zh_body)
 
+
+
+# Backward-compatible alias
+def convert_to_twd(value: float, from_currency: str) -> float | None:
+    """Convert to TWD. Alias for convert_currency(value, from, 'TWD')."""
+    return convert_currency(value, from_currency, "TWD")

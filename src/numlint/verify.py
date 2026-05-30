@@ -3,7 +3,7 @@ import re
 from numlint.extract import extract_numbers, extract_zh_numbers, NumVal, _ZH_MAG
 
 
-def verify_numbers(source_texts: list[str], zh_body: str) -> list[tuple[str, str, str]]:
+def verify_numbers(source_texts: list[str], target_text: str, target_lang: str = "zh") -> list[tuple[str, str, str]]:
     """Cross-validate numbers between multilingual sources and Chinese output.
     
     Returns list of (severity, issue, suggestion).
@@ -12,7 +12,7 @@ def verify_numbers(source_texts: list[str], zh_body: str) -> list[tuple[str, str
     src_combined = " ".join(source_texts)
     
     src_nums = extract_numbers(src_combined)
-    zh_nums = extract_zh_numbers(zh_body)
+    zh_nums = extract_zh_numbers(target_text) if target_lang == "zh" else extract_numbers(target_text)
     
     # 1. Check magnitude mismatches (most critical)
     for sn in src_nums:
@@ -39,7 +39,7 @@ def verify_numbers(source_texts: list[str], zh_body: str) -> list[tuple[str, str
                 issues.append(("warn", f"源文有 {sn.raw} ({sn.magnitude}), 中文未找到對應 {expected}", "確認數字量級"))
     
     # 2. Check format anomalies in Chinese
-    bad_formats = re.findall(r'(\d+,\d{1,2}[萬億兆])', zh_body)
+    bad_formats = re.findall(r'(\d+,\d{1,2}[萬億兆])', target_text)
     for bf in bad_formats:
         issues.append(("warn", f"數字格式異常: {bf}", "確認是否為翻譯錯誤"))
     

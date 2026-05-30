@@ -1,10 +1,10 @@
-"""Financial data verification for pyrss pipeline.
+"""Financial data verification. Validates stock/forex/oil prices against live market data.
 
 Validates stock prices, forex rates, and index levels mentioned in articles
 against real-time market data. No LLM — pure API + arithmetic.
 
 Usage:
-    from pyrss_engine.finance_lint import verify_financial_claims
+    from numlint import verify_financial_claims
     issues = verify_financial_claims(zh_body)
 """
 import re
