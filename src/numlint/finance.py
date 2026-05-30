@@ -1,0 +1,192 @@
+"""Financial data verification for pyrss pipeline.
+
+Validates stock prices, forex rates, and index levels mentioned in articles
+against real-time market data. No LLM — pure API + arithmetic.
+
+Usage:
+    from pyrss_engine.finance_lint import verify_financial_claims
+    issues = verify_financial_claims(zh_body)
+"""
+import re
+import time
+import httpx
+
+# ── Cache ──
+_CACHE: dict = {}
+_CACHE_TTL = 3600  # 1 hour
+
+
+def _cached_get(url: str, **kwargs) -> dict | None:
+    """GET with 1-hour cache."""
+    now = time.time()
+    if url in _CACHE and now - _CACHE[url][1] < _CACHE_TTL:
+        return _CACHE[url][0]
+    try:
+        r = httpx.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"}, **kwargs)
+        if r.status_code == 200:
+            data = r.json()
+            _CACHE[url] = (data, now)
+            return data
+    except Exception:
+        pass
+    return None
+
+
+# ── Forex verification ──
+
+def _get_forex_rate(base: str, quote: str) -> float | None:
+    """Get exchange rate base/quote."""
+    data = _cached_get(f"https://api.exchangerate-api.com/v4/latest/{base}")
+    if data:
+        return data.get("rates", {}).get(quote)
+    return None
+
+
+def _verify_forex(pairs: list[tuple[str, str, float]]) -> list[tuple[str, str, str]]:
+    """Verify forex rates mentioned in text.
+    pairs: [(base, quote, mentioned_rate), ...]
+    """
+    issues = []
+    for base, quote, mentioned in pairs:
+        actual = _get_forex_rate(base, quote)
+        if actual is None:
+            continue
+        deviation = abs(mentioned - actual) / actual
+        if deviation > 0.05:  # >5% off
+            issues.append(("warn", f"匯率偏差: {base}/{quote} 文中={mentioned:.2f}, 實際≈{actual:.2f} (差{deviation*100:.1f}%)", "確認匯率數字"))
+    return issues
+
+
+# ── Stock/Index verification ──
+
+_INDEX_SYMBOLS = {
+    '道瓊': '^DJI', '道瓊斯': '^DJI', 'dow jones': '^DJI', 'dow': '^DJI',
+    '標普': '^GSPC', 's&p': '^GSPC', 's&p 500': '^GSPC',
+    '那斯達克': '^IXIC', 'nasdaq': '^IXIC',
+    '日經': '^N225', 'nikkei': '^N225',
+    '恒生': '^HSI', '恒指': '^HSI', 'hang seng': '^HSI',
+    'kospi': '^KS11',
+    'dax': '^GDAXI',
+    'ftse': '^FTSE', '富時': '^FTSE',
+    'cac': '^FCHI',
+}
+
+_STOCK_SYMBOLS = {
+    '台積電': 'TSM', 'tsmc': 'TSM',
+    '蘋果': 'AAPL', 'apple': 'AAPL',
+    '輝達': 'NVDA', 'nvidia': 'NVDA',
+    '特斯拉': 'TSLA', 'tesla': 'TSLA',
+    '三星': '005930.KS', 'samsung': '005930.KS',
+    '微軟': 'MSFT', 'microsoft': 'MSFT',
+    '亞馬遜': 'AMZN', 'amazon': 'AMZN',
+    '谷歌': 'GOOGL', 'google': 'GOOGL', 'alphabet': 'GOOGL',
+}
+
+
+def _get_price(symbol: str) -> dict | None:
+    """Get latest price data from Yahoo Finance."""
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d"
+    data = _cached_get(url)
+    if not data:
+        return None
+    try:
+        result = data["chart"]["result"][0]
+        meta = result["meta"]
+        return {
+            "price": meta.get("regularMarketPrice", 0),
+            "prev_close": meta.get("previousClose") or meta.get("chartPreviousClose", 0),
+            "currency": meta.get("currency", "USD"),
+        }
+    except (KeyError, IndexError):
+        return None
+
+
+def _verify_prices(claims: list[tuple[str, float]]) -> list[tuple[str, str, str]]:
+    """Verify stock/index prices.
+    claims: [(name_or_symbol, mentioned_price), ...]
+    """
+    issues = []
+    for name, mentioned in claims:
+        name_lower = name.lower()
+        symbol = _INDEX_SYMBOLS.get(name_lower) or _STOCK_SYMBOLS.get(name_lower)
+        if not symbol:
+            continue
+        data = _get_price(symbol)
+        if not data or not data["price"]:
+            continue
+        actual = data["price"]
+        deviation = abs(mentioned - actual) / actual
+        if deviation > 0.10:  # >10% off (indices can be volatile intraday)
+            issues.append(("warn", f"價格偏差: {name} 文中={mentioned:.0f}, 實際≈{actual:.0f} (差{deviation*100:.1f}%)", "確認報導數字"))
+    return issues
+
+
+# ── Main extraction + verification ──
+
+def verify_financial_claims(zh_body: str) -> list[tuple[str, str, str]]:
+    """Extract and verify financial claims in Chinese text.
+    Returns list of (severity, issue, suggestion).
+    """
+    issues = []
+
+    # 1. Forex: 美元兌日圓 XXX / 歐元兌美元 X.XX
+    forex_pattern = re.compile(
+        r'(美元|歐元|英鎊|日圓|日元|人民幣|韓元|澳元)'
+        r'(?:兌|對|/)'
+        r'(美元|歐元|英鎊|日圓|日元|人民幣|韓元|澳元)'
+        r'[^\d]{0,5}?(\d+\.?\d*)'
+    )
+    _CURRENCY_ISO = {
+        '美元': 'USD', '歐元': 'EUR', '英鎊': 'GBP', '日圓': 'JPY', '日元': 'JPY',
+        '人民幣': 'CNY', '韓元': 'KRW', '澳元': 'AUD',
+    }
+    forex_pairs = []
+    for m in forex_pattern.finditer(zh_body):
+        base = _CURRENCY_ISO.get(m.group(1), '')
+        quote = _CURRENCY_ISO.get(m.group(2), '')
+        rate = float(m.group(3))
+        if base and quote and rate > 0:
+            forex_pairs.append((base, quote, rate))
+    if forex_pairs:
+        issues.extend(_verify_forex(forex_pairs))
+
+    # 2. Index levels: 道瓊指數 XX,XXX / 日經指數 XX,XXX
+    index_pattern = re.compile(
+        r'(道瓊|標普|那斯達克|日經|恒生|恒指|富時|DAX|KOSPI)'
+        r'[^\d]{0,15}?'
+        r'(?:至|收|報|為|達)\s*'  # must have a level-indicating verb
+        r'([\d,]+\.?\d*)\s*點?'
+    )
+    price_claims = []
+    for m in index_pattern.finditer(zh_body):
+        name = m.group(1)
+        val = float(m.group(2).replace(',', ''))
+        if val > 100:  # skip percentages
+            price_claims.append((name, val))
+    if price_claims:
+        issues.extend(_verify_prices(price_claims))
+
+    # 3. Oil price: 原油/布蘭特/WTI XX美元
+    oil_pattern = re.compile(r'(?:原油|布蘭特|WTI|Brent)[^\d]{0,10}?(\d+\.?\d*)\s*美元')
+    for m in oil_pattern.finditer(zh_body):
+        price = float(m.group(1))
+        # Verify against CL=F (WTI crude)
+        data = _get_price("CL=F")
+        if data and data["price"]:
+            deviation = abs(price - data["price"]) / data["price"]
+            if deviation > 0.15:
+                issues.append(("warn", f"油價偏差: 文中={price:.1f}, 實際≈{data['price']:.1f}美元", "確認油價"))
+
+    return issues
+
+
+if __name__ == '__main__':
+    # Self-test
+    test = "道瓊指數下跌400點至42,100點。美元兌日圓升至159.3。原油跌至每桶67美元。"
+    print(f"測試: {test}\n")
+    issues = verify_financial_claims(test)
+    if issues:
+        for s, i, f in issues:
+            print(f"  [{s}] {i} | {f}")
+    else:
+        print("  ✅ 所有金融數據驗證通過")
