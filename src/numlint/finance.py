@@ -83,8 +83,13 @@ _STOCK_SYMBOLS = {
 }
 
 
-def _get_price(symbol: str) -> dict | None:
-    """Get latest price data from Yahoo Finance."""
+# ── Price fetching with fallback chain ──
+# Yahoo Finance v8 is primary but frequently breaks (rate limits, CORS, endpoint
+# changes).  We fall back to Twelve Data (free tier), then Google Finance scrape.
+# The existing _CACHE (1h TTL) is preserved — each source URL is cached independently.
+
+def _get_price_yahoo(symbol: str) -> dict | None:
+    """Fetch price from Yahoo Finance v8 chart API."""
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=5d"
     data = _cached_get(url)
     if not data:
@@ -99,6 +104,75 @@ def _get_price(symbol: str) -> dict | None:
         }
     except (KeyError, IndexError):
         return None
+
+
+def _get_price_twelve_data(symbol: str) -> dict | None:
+    """Fetch price from Twelve Data (free tier, no key required for basic quotes)."""
+    # Map common symbols for Twelve Data format
+    td_symbol = symbol.replace("^", "") if symbol.startswith("^") else symbol
+    # Twelve Data uses .KS suffix same as Yahoo for Korean stocks
+    url = f"https://api.twelvedata.com/price?symbol={td_symbol}&apikey=demo"
+    data = _cached_get(url)
+    if not data:
+        return None
+    try:
+        price = float(data.get("price", 0))
+        if price <= 0:
+            return None
+        return {
+            "price": price,
+            "prev_close": 0,  # not available from this endpoint
+            "currency": "USD",
+        }
+    except (ValueError, TypeError):
+        return None
+
+
+def _get_price_google(symbol: str) -> dict | None:
+    """Fetch price from Google Finance as last-resort fallback."""
+    # Google Finance URL format — extract price from the redirect/JSON page
+    url = f"https://www.google.com/finance/quote/{symbol}:NYSE"
+    try:
+        r = httpx.get(url, timeout=8, headers={"User-Agent": "Mozilla/5.0"}, follow_redirects=True)
+        if r.status_code != 200:
+            return None
+        # Try to extract price from the HTML/JSON response
+        import json
+        # Google Finance embeds data in a script tag
+        match = re.search(r'data-last-price="([0-9.]+)"', r.text)
+        if not match:
+            match = re.search(r'"lastPrice"\s*:\s*([0-9.]+)', r.text)
+        if match:
+            price = float(match.group(1))
+            if price > 0:
+                return {
+                    "price": price,
+                    "prev_close": 0,
+                    "currency": "USD",
+                }
+    except Exception:
+        pass
+    return None
+
+
+def _get_price(symbol: str) -> dict | None:
+    """Get latest price data with fallback chain: Yahoo → Twelve Data → Google Finance."""
+    # Try Yahoo Finance first (existing, most reliable when available)
+    result = _get_price_yahoo(symbol)
+    if result:
+        return result
+
+    # Fallback 1: Twelve Data free tier
+    result = _get_price_twelve_data(symbol)
+    if result:
+        return result
+
+    # Fallback 2: Google Finance scrape (best-effort)
+    result = _get_price_google(symbol)
+    if result:
+        return result
+
+    return None
 
 
 def _verify_prices(claims: list[tuple[str, float]]) -> list[tuple[str, str, str]]:
