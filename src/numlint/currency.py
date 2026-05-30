@@ -57,9 +57,11 @@ def annotate_currency_twd(zh_body: str) -> str:
     if not rates:
         return zh_body
     
-    # Pattern: number + 億/萬/兆 + currency_name
+    # Build pattern from _CURRENCY_MAP (deduplicated with extract.py)
+    _ZH_CURRENCY_NAMES = [k for k in _CURRENCY_MAP if any('\u4e00' <= c <= '\u9fff' for c in k)]
+    _ZH_CUR_ALT = '|'.join(_ZH_CURRENCY_NAMES)
     pattern = re.compile(
-        r'([\d,]+\.?\d*)\s*(兆|億|萬)?\s*(美元|歐元|英鎊|日圓|日元|韓元|盧布|澳元|加元|印度盧比)'
+        rf'([\d,]+\.?\d*)\s*(兆|億|萬)?\s*({_ZH_CUR_ALT})'
         r'(?!（約)'  # don't double-annotate
     )
     

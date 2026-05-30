@@ -96,50 +96,62 @@ _CURRENCY_MAP = {
 _ZH_MAG = {'兆': 1e12, '億': 1e8, '萬': 1e4}
 
 
+def _normalize_number(raw: str) -> float | None:
+    """Parse a raw number string, handling European comma decimals and
+    Spanish/Portuguese thousand-dot notation. Returns None on failure."""
+    s = raw.replace(' ', '').replace('\u00a0', '')
+    if ',' in s and '.' in s:
+        s = s.replace(',', '')  # 1,500.00
+    elif ',' in s and len(s.split(',')[-1]) <= 2:
+        s = s.replace(',', '.')  # 1,5 → 1.5 (European)
+    else:
+        s = s.replace(',', '')  # 1,500 → 1500
+    # Handle ES/PT thousand-dot: 1.800 (3 digits after dot = thousands sep)
+    if '.' in s:
+        parts = s.split('.')
+        if len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit():
+            s = s.replace('.', '')  # 1.800 → 1800
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
 def extract_numbers(text: str) -> list[NumVal]:
     """Extract numbers with magnitude and currency from multilingual source text."""
     results = []
-    
+
     # Pattern: optional currency symbol + number + optional magnitude word
-    # Handles: $1.8 billion, 3,5 milliards d'euros, 18億円, 1.7B shillings
+    # Handles: $1.8 billion, 3,5 milliards d'euros, 1.7B shillings
+    # NOTE: Post-filter skips bare numbers without currency/magnitude context
+    # (dates, versions, etc.) because magnitude/currency words span many scripts.
     num_pattern = re.compile(
-        r'([$€£¥₩₹₽₺]|R\$)?\s*'  # optional currency symbol
-        r'([\d]+[,.\s]?[\d]*(?:[,.\s]\d+)?)\s*'  # number (handles 1,500 / 1.5 / 1 500)
-        r'(\w+)?',  # optional unit word after
+        r'([$€£¥₩₹₽₺]|R\$)?\s*'
+        r'([\d]+[,.\s]?\d*(?:[,.\s]\d+)?)\s*'
+        r'(\w+)?',
         re.UNICODE
     )
-    
+
     for m in num_pattern.finditer(text):
         cur_sym = m.group(1) or ''
         num_raw = m.group(2).replace(' ', '').replace('\u00a0', '')
         unit_word = (m.group(3) or '').lower()
-        
-        # Normalize number (handle European comma decimals)
-        if ',' in num_raw and '.' in num_raw:
-            num_raw = num_raw.replace(',', '')  # 1,500.00
-        elif ',' in num_raw and len(num_raw.split(',')[-1]) <= 2:
-            num_raw = num_raw.replace(',', '.')  # 1,5 → 1.5 (European)
-        else:
-            num_raw = num_raw.replace(',', '')  # 1,500 → 1500
-        
-        # Handle ES/PT thousand-dot: 1.800 (3 digits after dot = thousands sep)
-        if '.' in num_raw:
-            parts = num_raw.split('.')
-            if len(parts) == 2 and len(parts[1]) == 3 and parts[0].isdigit():
-                num_raw = num_raw.replace('.', '')  # 1.800 → 1800
-        
-        try:
-            val = float(num_raw)
-        except ValueError:
+
+        # Skip bare numbers without currency/magnitude context (dates, versions, etc.)
+        has_context = (
+            cur_sym
+            or unit_word in _MAG_PATTERNS
+            or unit_word in _CURRENCY_MAP
+        )
+        if not has_context:
+            val_peek = _normalize_number(num_raw)
+            if val_peek is None or val_peek < 100 or val_peek == int(val_peek):
+                continue
+
+        val = _normalize_number(num_raw)
+        if val is None or val == 0:
             continue
-        
-        if val == 0:
-            continue
-        if 1900 < val < 2100 and not unit_word:  # skip years
-            continue
-        if val < 10 and not unit_word and not cur_sym:  # skip tiny bare numbers
-            continue
-            
+
         # Determine magnitude (match longest pattern first)
         mag = ''
         multiplier = 1.0
@@ -151,25 +163,25 @@ def extract_numbers(text: str) -> list[NumVal]:
                 elif mag_val >= 1e6: mag = 'M'
                 elif mag_val >= 1e3: mag = 'K'
                 break
-        
+
         # Determine currency
         currency = ''
         if cur_sym:
             currency = _CURRENCY_MAP.get(cur_sym, '')
         elif unit_word:
             currency = _CURRENCY_MAP.get(unit_word, '')
-        
+
         # Special: Indian crore = 10M
         if unit_word in ('crore', 'crores'):
             multiplier = 1e7
             mag = 'M'
-        
+
         normalized = val * multiplier
         unit_type = 'currency' if currency else ('%' if unit_word in ('percent', '%', 'pct') else '')
-        
+
         if normalized > 0:
             results.append(NumVal(raw=m.group(0).strip(), value=normalized, unit=unit_type, currency=currency, magnitude=mag))
-    
+
     # Secondary pass: CJK + Thai + Bengali + Hebrew + Urdu magnitude (scripts not caught by \w+ Latin regex)
     _NON_LATIN_MAG = '|'.join(sorted([
         # CJK
@@ -188,9 +200,10 @@ def extract_numbers(text: str) -> list[NumVal]:
         mag_char = m.group(2)
         multiplier = _MAG_PATTERNS.get(mag_char, 1.0)
         normalized = val * multiplier
-        mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e8 else ('M' if multiplier >= 1e4 else 'K'))
+        # Magnitude letter: rough order-of-magnitude bucket (actual value carries the truth)
+        mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e8 else ('M' if multiplier >= 1e6 else 'K'))
         results.append(NumVal(raw=m.group(0), value=normalized, unit='', currency='', magnitude=mag))
-    
+
     # Tertiary pass: compound CJK/KR magnitudes (6조4000억 = 6.4兆)
     _CJK_MAG_CHARS = {'조': 1e12, '억': 1e8, '만': 1e4, '兆': 1e12, '億': 1e8, '万': 1e4, '萬': 1e4}
     _cjk_mag_re = '|'.join(sorted(_CJK_MAG_CHARS.keys(), key=len, reverse=True))
@@ -212,38 +225,36 @@ def extract_numbers(text: str) -> list[NumVal]:
 def extract_zh_numbers(zh_body: str) -> list[NumVal]:
     """Extract numbers from Chinese output."""
     results = []
-    
+
     # Pattern: number + 兆/億/萬 + optional currency
     zh_pattern = re.compile(
         r'([\d,]+\.?\d*)\s*(兆|億|萬)?\s*(美元|歐元|英鎊|日圓|日元|韓元|盧布|人民幣|台幣|新台幣|澳元|加元|先令|%)?'
     )
-    
+
     for m in zh_pattern.finditer(zh_body):
         num_raw = m.group(1).replace(',', '')
         zh_mag = m.group(2) or ''
         zh_cur = m.group(3) or ''
-        
+
         try:
             val = float(num_raw)
         except ValueError:
             continue
-        
+
         if val == 0:
             continue
-        
+
         multiplier = _ZH_MAG.get(zh_mag, 1.0)
         normalized = val * multiplier
-        
+
         mag = ''
+        # Magnitude letter: rough bucket (actual value carries the truth for matching)
         if zh_mag == '兆': mag = 'T'
-        elif zh_mag == '億': mag = 'B'  # Note: 億=1e8, but in news context 18億≈1.8B
-        elif zh_mag == '萬': mag = 'K'  # 萬=1e4
-        
+        elif zh_mag == '億': mag = 'B'  # 億=1e8, ~0.1B, grouped with B
+        elif zh_mag == '萬': mag = 'K'  # 萬=1e4, thousand-range bucket
         currency = _CURRENCY_MAP.get(zh_cur, '')
         unit_type = 'currency' if currency else ('%' if zh_cur == '%' else '')
-        
+
         results.append(NumVal(raw=m.group(0).strip(), value=normalized, unit=unit_type, currency=currency, magnitude=mag))
-    
+
     return results
-
-
