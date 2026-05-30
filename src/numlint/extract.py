@@ -187,6 +187,21 @@ def extract_numbers(text: str) -> list[NumVal]:
         mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e8 else ('M' if multiplier >= 1e4 else 'K'))
         results.append(NumVal(raw=m.group(0), value=normalized, unit='', currency='', magnitude=mag))
     
+    # Tertiary pass: compound CJK/KR magnitudes (6조4000억 = 6.4兆)
+    _CJK_MAG_CHARS = {'조': 1e12, '억': 1e8, '만': 1e4, '兆': 1e12, '億': 1e8, '万': 1e4, '萬': 1e4}
+    _cjk_mag_re = '|'.join(sorted(_CJK_MAG_CHARS.keys(), key=len, reverse=True))
+    for compound_m in re.finditer(rf'((\d+\.?\d*)\s*({_cjk_mag_re})){{2,}}', text):
+        segments = re.findall(rf'(\d+\.?\d*)\s*({_cjk_mag_re})', compound_m.group())
+        if len(segments) >= 2:
+            total = sum(float(n) * _CJK_MAG_CHARS[m] for n, m in segments)
+            mag = 'T' if total >= 1e12 else ('B' if total >= 1e8 else 'M')
+            results.append(NumVal(raw=compound_m.group(), value=total, unit='', currency='', magnitude=mag))
+
+    # Quaternary pass: Indian compound (lakh crore)
+    for m in re.finditer(r'(\d+\.?\d*)\s*lakh\s*crores?', text, re.IGNORECASE):
+        val = float(m.group(1)) * 1e12  # lakh × crore = 1e5 × 1e7
+        results.append(NumVal(raw=m.group(), value=val, unit='', currency='', magnitude='T'))
+
     return results
 
 
