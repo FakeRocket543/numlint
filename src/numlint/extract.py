@@ -135,6 +135,10 @@ def extract_numbers(text: str) -> list[NumVal]:
         
         if val == 0:
             continue
+        if 1900 < val < 2100 and not unit_word:  # skip years
+            continue
+        if val < 10 and not unit_word and not cur_sym:  # skip tiny bare numbers
+            continue
             
         # Determine magnitude (match longest pattern first)
         mag = ''
@@ -233,7 +237,7 @@ def extract_zh_numbers(zh_body: str) -> list[NumVal]:
         mag = ''
         if zh_mag == '兆': mag = 'T'
         elif zh_mag == '億': mag = 'B'  # Note: 億=1e8, but in news context 18億≈1.8B
-        elif zh_mag == '萬': mag = 'M'
+        elif zh_mag == '萬': mag = 'K'  # 萬=1e4
         
         currency = _CURRENCY_MAP.get(zh_cur, '')
         unit_type = 'currency' if currency else ('%' if zh_cur == '%' else '')

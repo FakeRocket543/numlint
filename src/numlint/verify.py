@@ -69,7 +69,7 @@ if __name__ == "__main__":
            "Le Japon perd 3,1 millions d'habitants en 5 ans"]
     zh = "日本人口降至1.23萬人，較2020年減少3100人。"
     
-    issues = lint_numbers_v2(src, zh)
+    issues = verify_numbers(src, zh)
     for sev, issue, fix in issues:
         print(f"  [{sev}] {issue} | {fix}")
 
