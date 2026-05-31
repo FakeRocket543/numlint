@@ -85,7 +85,7 @@ class TestMeasure:
             "距海岸500公里"
         )
         assert len(issues) > 0
-        assert "未換算" in issues[0][1]
+        assert "not converted" in issues[0][1]
 
     def test_passes_correct_conversion(self):
         issues = verify_measurements(

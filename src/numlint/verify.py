@@ -36,12 +36,12 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
                     expected = f"{sn.value/1e4:.0f}萬"
                 else:
                     expected = f"{sn.value:.0f}"
-                issues.append(("warn", f"源文有 {sn.raw} ({sn.magnitude}), 中文未找到對應 {expected}", "確認數字量級"))
+                issues.append(("warn", f"source has {sn.raw} ({sn.magnitude}), target missing equivalent {expected}", "check magnitude"))
     
     # 2. Check format anomalies in Chinese
     bad_formats = re.findall(r'(\d+,\d{1,2}[萬億兆])', target_text)
     for bf in bad_formats:
-        issues.append(("warn", f"數字格式異常: {bf}", "確認是否為翻譯錯誤"))
+        issues.append(("warn", f"abnormal number format: {bf}", "check for translation error"))
     
     # 3. Check 萬/億 confusion (e.g., "1.23萬人" should be "1.23億")
     for zn in zh_nums:
@@ -49,7 +49,7 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
         if zn.magnitude == 'M' and zn.value < 1e6:  # X萬 with small X
             for sn in src_nums:
                 if sn.value >= 1e8 and abs(sn.value / 1e8 - zn.value / 1e4) < 0.5:
-                    issues.append(("auto-fix", f"量級錯誤: {zn.raw} 應為 {sn.value/1e8:.2f}億", f"→ {sn.value/1e8:.2f}億"))
+                    issues.append(("auto-fix", f"magnitude error: {zn.raw} should be {sn.value/1e8:.2f}×10⁸", f"→ {sn.value/1e8:.2f}×10⁸"))
     
     # 4. Currency mismatch check
     src_currencies = {sn.currency for sn in src_nums if sn.currency}
@@ -58,7 +58,7 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
     if src_currencies and zh_currencies:
         unexpected = zh_currencies - src_currencies - {'TWD'}  # TWD added as conversion is OK
         if unexpected:
-            issues.append(("warn", f"幣值不一致: 源文{src_currencies}, 中文{zh_currencies}", "確認幣別"))
+            issues.append(("warn", f"currency mismatch: source {src_currencies}, target {zh_currencies}", "check currency"))
     
     return issues
 

@@ -22,13 +22,13 @@ def verify_semiconductor(zh_body: str) -> list[tuple[str, str, str]]:
             # Check if it's close to a valid node
             closest = min(_VALID_NODES_NM, key=lambda x: abs(x - val))
             if abs(val - closest) <= 2:
-                issues.append(("warn", f"製程節點 {val}nm 可能應為 {closest}nm", "確認製程"))
+                issues.append(("warn", f"process node {val}nm possibly should be {closest}nm", "check process"))
             elif val > 0 and val < 2:
-                issues.append(("warn", f"製程 {val}nm 尚未量產（目前最先進為 2-3nm）", "確認數字"))
+                issues.append(("warn", f"製程 {val}nm not yet in mass production (current leading edge: 2-3nm）", "check number"))
     
     # Catch: nm 被翻成公尺/公里
     if re.search(r'\d+\s*(?:公尺|公里).*(?:製程|晶片|芯片|處理器|CPU|GPU)', zh_body):
-        issues.append(("error", "製程單位疑似被翻成公尺/公里（應為奈米 nm）", "確認單位"))
+        issues.append(("error", "process unit mistranslated as meters/km (should be nm)", "check unit"))
     
     return issues
 
@@ -53,9 +53,9 @@ def verify_weather(zh_body: str) -> list[tuple[str, str, str]]:
     for m in re.finditer(r'(?:氣溫|溫度|高溫|低溫)[^\d]{0,10}?(-?\d+\.?\d*)\s*(?:度|°C|℃|攝氏)', zh_body):
         val = float(m.group(1))
         if val < -90 or val > 60:
-            issues.append(("warn", f"溫度 {val}°C 超出地球紀錄範圍", "確認溫度"))
+            issues.append(("warn", f"temperature out of Earth record range", "確認溫度"))
         elif val > 50:
-            issues.append(("info", f"溫度 {val}°C 極端高溫，確認是否正確", ""))
+            issues.append(("info", f"溫度 {val}°C extreme high temp, verify", ""))
     
     # Check if Fahrenheit leaked as Celsius
     for m in re.finditer(r'(?:氣溫|溫度|高溫)[^\d]{0,10}?(\d+)\s*度', zh_body):
@@ -68,19 +68,19 @@ def verify_weather(zh_body: str) -> list[tuple[str, str, str]]:
     for m in re.finditer(r'(\d+\.?\d*)\s*(?:hPa|百帕|毫巴)', zh_body):
         val = float(m.group(1))
         if val < 870 or val > 1085:
-            issues.append(("warn", f"氣壓 {val}hPa 超出正常範圍 (870-1085)", "確認氣壓"))
+            issues.append(("warn", f"pressure out of normal range (870-1085)", "確認氣壓"))
     
     # Wind speed
     for m in re.finditer(r'風速[^\d]{0,5}?(\d+\.?\d*)\s*(?:公里|km)', zh_body):
         val = float(m.group(1))
         if val > 410:
-            issues.append(("warn", f"風速 {val}km/h 超出地球紀錄 (≤407)", "確認風速"))
+            issues.append(("warn", f"wind speed exceeds Earth record (≤407)", "確認風速"))
     
     # Rainfall
     for m in re.finditer(r'(?:降雨|雨量|降水)[^\d]{0,10}?(\d+\.?\d*)\s*(?:毫米|mm|公釐)', zh_body):
         val = float(m.group(1))
         if val > 1000:
-            issues.append(("warn", f"降雨 {val}mm 極端值，確認時間範圍", ""))
+            issues.append(("warn", f"extreme rainfall, check timeframe", ""))
     
     return issues
 
@@ -115,7 +115,7 @@ def verify_calendar(source_texts: list[str], zh_body: str) -> list[tuple[str, st
         western = be_year - 543
         # Check if zh mentions the wrong year
         if str(be_year) in zh_body:
-            issues.append(("warn", f"佛曆 {be_year} 未轉換為西元 {western}", "確認年份"))
+            issues.append(("warn", f"Buddhist Era not converted to CE {western}", "check year"))
     
     # Check: source has Islamic calendar (Hijri)
     for m in re.finditer(r'(\d{4})\s*(?:هـ|AH|Hijri)', src_combined):
@@ -123,14 +123,14 @@ def verify_calendar(source_texts: list[str], zh_body: str) -> list[tuple[str, st
         # Approximate conversion
         western_approx = hijri + 579
         if str(hijri) in zh_body and western_approx > 2000:
-            issues.append(("warn", f"伊斯蘭曆 {hijri} 未轉換為約西元 {western_approx}", "確認年份"))
+            issues.append(("warn", f"Islamic calendar not converted to approx CE {western_approx}", "check year"))
     
     # Check: Japanese era
     for m in re.finditer(r'令和\s*(\d+)\s*年', zh_body):
         reiwa = int(m.group(1))
         western = reiwa + 2018
         if abs(western - _CURRENT_YEAR) > 2:
-            issues.append(("warn", f"令和{reiwa}年 = 西元{western}年，確認年份", ""))
+            issues.append(("warn", f"令和{reiwa}年 = 西元{western}年，check year", ""))
     
     return issues
 
@@ -145,13 +145,13 @@ def verify_air_quality(zh_body: str) -> list[tuple[str, str, str]]:
     for m in re.finditer(r'PM\s*2\.?5[^\d]{0,10}?(\d+\.?\d*)\s*(?:μg|微克)?', zh_body):
         val = float(m.group(1))
         if val > 500:
-            issues.append(("warn", f"PM2.5 = {val}，超出 AQI 量表上限 (0-500)", "確認數值"))
+            issues.append(("warn", f"PM2.5 = {val}，exceeds AQI scale max (0-500)", "check value"))
     
     # AQI: 0-500
     for m in re.finditer(r'AQI[^\d]{0,5}?(\d+)', zh_body):
         val = int(m.group(1))
         if val > 500:
-            issues.append(("warn", f"AQI = {val}，超出標準量表 (0-500)", "確認數值"))
+            issues.append(("warn", f"AQI = {val}，exceeds standard scale (0-500)", "check value"))
     
     return issues
 

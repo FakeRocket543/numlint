@@ -145,10 +145,10 @@ def verify_measurements(source_texts: list[str], zh_body: str) -> list[tuple[str
                         expected = (s_val - 32) * 5 / 9
                     # If zh value ≈ source value (not converted)
                     if abs(z_val - s_val) / max(s_val, 1) < 0.1:
-                        issues.append(("warn", f"未換算: {s_raw} 中文寫{z_raw}，應≈{expected:.0f}{z_raw[-2:]}", "確認單位換算"))
+                        issues.append(("warn", f"not converted: {s_raw} → {z_raw}, expected ≈{expected:.0f}{z_raw[-2:]}", "check unit conversion"))
                     # If zh value is way off from expected
                     elif abs(z_val - expected) / max(expected, 1) > 0.2:
-                        issues.append(("warn", f"換算偏差: {s_raw}→{z_raw}，預期≈{expected:.0f}", "確認換算"))
+                        issues.append(("warn", f"conversion deviation: {s_raw}→{z_raw}, expected ≈{expected:.0f}", "check conversion"))
     
     # Check: temperature without unit label
     temp_no_unit = re.findall(r'(\d+)度(?!C|F|攝|華)', zh_body)
@@ -158,7 +158,7 @@ def verify_measurements(source_texts: list[str], zh_body: str) -> list[tuple[str
             for s_val, s_unit, _ in src_measurements:
                 if s_unit == '°F' and abs(s_val - val) < 3:
                     expected_c = (val - 32) * 5 / 9
-                    issues.append(("warn", f"溫度疑似華氏未轉: {val}度 可能應為{expected_c:.0f}°C", "確認攝氏/華氏"))
+                    issues.append(("warn", f"temperature likely °F not converted: {val}° possibly {expected_c:.0f}°C", "check °C/°F"))
     
     return issues
 
@@ -204,7 +204,7 @@ if __name__ == "__main__":
         ["The hurricane is 500 miles from the coast"],
         "颶風距離海岸500公里"
     )
-    print(f"Test 1 (500 miles → 500公里 未換算): {'✅ caught' if issues else '❌ missed'}")
+    print(f"Test 1 (500 miles → 500公里 not converted): {'✅ caught' if issues else '❌ missed'}")
     if issues: print(f"  → {issues[0][1]}")
     
     # Test: correct conversion

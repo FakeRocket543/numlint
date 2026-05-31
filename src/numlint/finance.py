@@ -53,7 +53,7 @@ def _verify_forex(pairs: list[tuple[str, str, float]]) -> list[tuple[str, str, s
             continue
         deviation = abs(mentioned - actual) / actual
         if deviation > 0.05:  # >5% off
-            issues.append(("warn", f"匯率偏差: {base}/{quote} 文中={mentioned:.2f}, 實際≈{actual:.2f} (差{deviation*100:.1f}%)", "確認匯率數字"))
+            issues.append(("warn", f"forex deviation: {base}/{quote} 文中={mentioned:.2f}, 實際≈{actual:.2f} (差{deviation*100:.1f}%)", "check forex rate"))
     return issues
 
 
@@ -191,7 +191,7 @@ def _verify_prices(claims: list[tuple[str, float]]) -> list[tuple[str, str, str]
         actual = data["price"]
         deviation = abs(mentioned - actual) / actual
         if deviation > 0.10:  # >10% off (indices can be volatile intraday)
-            issues.append(("warn", f"價格偏差: {name} 文中={mentioned:.0f}, 實際≈{actual:.0f} (差{deviation*100:.1f}%)", "確認報導數字"))
+            issues.append(("warn", f"price deviation: {name} 文中={mentioned:.0f}, 實際≈{actual:.0f} (差{deviation*100:.1f}%)", "check reported figure"))
     return issues
 
 
@@ -249,7 +249,7 @@ def verify_financial_claims(zh_body: str) -> list[tuple[str, str, str]]:
         if data and data["price"]:
             deviation = abs(price - data["price"]) / data["price"]
             if deviation > 0.15:
-                issues.append(("warn", f"油價偏差: 文中={price:.1f}, 實際≈{data['price']:.1f}美元", "確認油價"))
+                issues.append(("warn", f"oil price deviation: 文中={price:.1f}, 實際≈{data['price']:.1f}美元", "check oil price"))
 
     return issues
 
