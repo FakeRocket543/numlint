@@ -2,65 +2,195 @@
 
 Multilingual number & currency verification for translated text.
 
-**28 languages. Cross-lingual magnitude validation. Live financial data checks.**
+Catches magnitude errors, unit conversion mistakes, and financial data discrepancies that slip through LLM-based or human translation. Deterministic — no AI, no hallucination.
 
-## Problem
+## Why this exists
 
-When translating news across languages, numbers get mangled:
-- "1.8 billion" → "1.8萬" (should be 18億)
-- "$1.7 billion" → "1.7億先令" (wrong currency)
-- "3.09 million" → "3100人" (magnitude lost)
+LLMs and human translators routinely make number errors that are invisible to proofreaders:
 
-LLMs can't reliably do arithmetic. `numlint` catches these errors with deterministic validation.
+- "1.8 billion" → "1.8萬" (off by 5 orders of magnitude)
+- "500 miles" → "500公里" (not converted, should be 805km)
+- "$45 billion" → "45億美元" (should be 450億)
+- "104°F" → "104度" (Fahrenheit not converted to Celsius)
 
-## Install
+These errors are **catastrophic in news, finance, and legal documents** but trivially detectable with arithmetic. numlint does that arithmetic across 28 languages.
+
+## Features
+
+| Module | What it does |
+|--------|-------------|
+| `extract` | Extracts numbers + magnitudes from 28 languages (EN/FR/DE/ES/PT/RU/JA/KO/AR/ID/TR/IT/NL/VI/SV/DA/TH/PL/RO/EL/HU/FI/HE/HI/BN/UR/MS/CZ) |
+| `verify` | Cross-validates source numbers vs target translation |
+| `currency` | Live exchange rate lookup + target currency annotation |
+| `finance` | Validates stock/forex/oil prices against market data |
+| `measure` | Imperial↔metric conversion verification |
+| `domain` | Domain-specific checks: semiconductor, weather, calendar, air quality |
+
+## Installation
 
 ```bash
 pip install numlint
 ```
 
-## Usage
+Or from source:
+```bash
+git clone https://github.com/FakeRocket543/numlint.git
+cd numlint
+pip install -e .
+```
+
+## Quick Start
 
 ```python
-from numlint import extract_numbers, verify_numbers, annotate_twd
+from numlint import verify_numbers, extract_numbers, annotate_twd
 
-# Extract numbers from any of 28 languages
-nums = extract_numbers("1,8 milliard de dollars et 3,5 millions")
-# → [NumVal(value=1.8e9, magnitude='B', currency='USD'), NumVal(value=3.5e6, magnitude='M')]
-
-# Verify Chinese output against source
+# Verify translation accuracy
 issues = verify_numbers(
-    source_texts=["The deal is worth $1.8 billion"],
-    zh_text="18萬美元"  # WRONG! should be 18億
+    source_texts=["The deal was worth $1.8 billion"],
+    target_text="這筆交易價值18億美元",
+    target_lang="zh"
 )
-# → [('warn', '源文有 $1.8 billion (B), 中文未找到對應 18億', '確認數字量級')]
+# [] — correct (1.8B = 18億)
 
-# Annotate foreign currency with TWD equivalent
+issues = verify_numbers(
+    source_texts=["The deal was worth $1.8 billion"],
+    target_text="這筆交易價值1.8萬美元"
+)
+# [('warn', 'source has $1.8 billion (B), target missing equivalent 18億', 'check magnitude')]
+
+# Extract numbers from any language
+nums = extract_numbers("Le budget est de 3,5 milliards d'euros")
+# [NumVal(raw='3,5 milliards', value=3500000000.0, unit='currency', currency='EUR', magnitude='B')]
+
+nums = extract_numbers("予算は1兆8000億円")
+# [NumVal(raw='1兆8000億', value=1800000000000.0, ...)]
+
+# Annotate with local currency equivalent
 text = annotate_twd("投資額達18億美元")
-# → "投資額達18億美元（約新台幣566億元）"
+# "投資額達18億美元（約新台幣566億元）"
+
+# Or any target currency
+from numlint import convert_currency
+jpy = convert_currency(100, "USD", "JPY")  # 100 USD → ~15,900 JPY
 ```
 
-## Supported Languages (28)
+## Modules
 
-EN, FR, DE, ES, PT, RU, JA, KO, AR, ID, TR, IT, NL, VI, SV, DA, TH, PL, RO, EL, HU, FI, HE, HI, BN, UR, MS, CZ
+### `verify_numbers(source_texts, target_text, target_lang="zh")`
 
-Including Indian number system (lakh/crore), CJK magnitudes (萬/億/兆/만/억), and Arabic numerals.
+Cross-validates numbers between multilingual sources and target output. Returns list of `(severity, issue, suggestion)` tuples.
 
-## Financial Verification
+Checks:
+- Magnitude mismatches (billion → 萬 instead of 億)
+- Number format anomalies (1,50億 — comma in wrong place)
+- Currency mismatches (source USD, target says EUR)
+
+### `extract_numbers(text) → list[NumVal]`
+
+Extracts all significant numbers from text in any of 28 supported languages. Handles:
+
+- Western magnitudes: billion, million, milliard, Milliarden, milhões...
+- CJK magnitudes: 兆/億/萬 (ZH), 조/억/만 (KO), 兆/億/万 (JA)
+- Indian system: lakh, crore, lakh crore
+- Arabic/Thai/Hebrew/Bengali/Urdu numeral words
+- European comma decimals (3,5 = 3.5)
+- Spanish/Portuguese thousand dots (1.800 = 1800)
+
+### `verify_measurements(source_texts, zh_body)`
+
+Catches unconverted imperial→metric units:
+- 500 miles written as 500公里 (should be 805)
+- 104°F written as 104度 (should be 40°C)
+
+### `verify_financial_claims(zh_body)`
+
+Live validation against market data:
+- Stock index levels (道瓊/日經/恒生)
+- Forex rates (美元兌日圓)
+- Oil prices (WTI/Brent)
+
+Uses Yahoo Finance → Twelve Data → Google Finance (fallback chain).
+
+### `verify_domain(source_texts, zh_body)`
+
+Domain-specific plausibility:
+- **Semiconductor**: validates process nodes (3nm, 5nm...), catches nm→公尺 mistranslation
+- **Weather**: temperature range checks, °F→°C conversion detection
+- **Calendar**: Buddhist Era (พ.ศ.), Islamic calendar (هـ), 民國/令和 conversion
+- **Air quality**: PM2.5/AQI range validation
+
+### `convert_currency(value, from_currency, to_currency="TWD")`
+
+Live exchange rate conversion. 166 currencies supported. Rates cached 6 hours.
+
+## Supported Languages (Number Extraction)
+
+English, French, German, Spanish, Portuguese, Russian, Japanese, Korean, Arabic, Indonesian, Turkish, Italian, Dutch, Vietnamese, Swedish, Danish, Thai, Polish, Romanian, Greek, Hungarian, Finnish, Hebrew, Hindi, Bengali, Urdu, Malay, Czech
+
+## Configuration
+
+numlint uses no config files. Behavior is controlled by function parameters:
 
 ```python
-from numlint import verify_financial_claims
+# Verify against any target language (not just Chinese)
+issues = verify_numbers(sources, target, target_lang="zh")  # Chinese
+issues = verify_numbers(sources, target, target_lang="en")  # English target
 
-issues = verify_financial_claims("道瓊指數收至42,100點。美元兌日圓升至159.3。")
-# Checks against live Yahoo Finance / exchange rate APIs
+# Convert to any currency
+convert_currency(100, "USD", "EUR")  # USD → EUR
+convert_currency(100, "USD", "JPY")  # USD → JPY
 ```
 
-Validates:
-- Forex rates (±5% threshold)
-- Stock indices: Dow, S&P, Nasdaq, Nikkei, Hang Seng, DAX, FTSE, KOSPI
-- Oil prices (WTI/Brent)
-- Individual stocks: TSMC, NVIDIA, Apple, Tesla, etc.
+## Troubleshooting
+
+### "source has X, target missing equivalent Y"
+
+The source text contains a significant number that doesn't appear (within ±20% tolerance) in the target text. Common causes:
+- LLM omitted the number entirely
+- Magnitude was wrong (billion → 萬 instead of 億)
+- Number was paraphrased in a way numlint can't parse
+
+**Fix**: Check the target text manually. If the number is there but in a different format, you may need to expand `_ZH_MAG` patterns in `extract.py`.
+
+### False positives on dates/versions
+
+numlint skips bare numbers without currency/magnitude context. If you get false positives on years or version numbers, they likely have an adjacent magnitude word being mismatched.
+
+### Exchange rates stale
+
+Rates are cached 6 hours. If you need fresh rates:
+```python
+from numlint.currency import _RATE_CACHE
+_RATE_CACHE.clear()
+```
+
+### Adding a new language
+
+Edit `src/numlint/extract.py`:
+1. Add magnitude words to `_MAG_PATTERNS` dict
+2. Add currency names to `_CURRENCY_MAP` if needed
+3. Add a test case to `tests/test_basic.py`
+
+## Development
+
+```bash
+git clone https://github.com/FakeRocket543/numlint.git
+cd numlint
+pip install -e ".[dev]"
+pytest tests/ -v
+```
 
 ## License
 
-AGPL-3.0 — Free for open-source use. Contact for commercial licensing.
+AGPL-3.0. If you use numlint in a web service, you must open-source your modifications.
+
+## Contributing
+
+Issues and PRs welcome. Particularly useful contributions:
+
+- New language magnitude patterns (with test cases)
+- Edge case fixes (number formats that parse incorrectly)
+- Domain-specific validators (e.g., sports statistics, medical dosages)
+- Performance improvements for large-scale batch verification
+
+Please include test cases for any new extraction patterns.
