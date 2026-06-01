@@ -42,9 +42,9 @@ pip install -e .
 ## Quick Start
 
 ```python
-from numlint import verify_numbers, extract_numbers, annotate_twd
+from numlint import verify_numbers, extract_numbers, convert_currency
 
-# Verify translation accuracy
+# Verify translation accuracy (any source language → any target)
 issues = verify_numbers(
     source_texts=["The deal was worth $1.8 billion"],
     target_text="這筆交易價值18億美元",
@@ -53,25 +53,47 @@ issues = verify_numbers(
 # [] — correct (1.8B = 18億)
 
 issues = verify_numbers(
-    source_texts=["The deal was worth $1.8 billion"],
-    target_text="這筆交易價值1.8萬美元"
+    source_texts=["Le budget est de 3,5 milliards d'euros"],
+    target_text="The budget is 3.5 million euros"
 )
-# [('warn', 'source has $1.8 billion (B), target missing equivalent 18億', 'check magnitude')]
+# [('warn', 'source has 3,5 milliards (B), target missing equivalent...', ...)]
+# Caught: milliards (billion) mistranslated as million
 
-# Extract numbers from any language
-nums = extract_numbers("Le budget est de 3,5 milliards d'euros")
-# [NumVal(raw='3,5 milliards', value=3500000000.0, unit='currency', currency='EUR', magnitude='B')]
+# Extract numbers from any of 28 languages
+from numlint import extract_numbers
 
-nums = extract_numbers("予算は1兆8000億円")
-# [NumVal(raw='1兆8000億', value=1800000000000.0, ...)]
+# French
+extract_numbers("Le budget est de 3,5 milliards d'euros")
+# [NumVal(value=3_500_000_000, currency='EUR', magnitude='B')]
 
-# Annotate with local currency equivalent
-text = annotate_twd("投資額達18億美元")
-# "投資額達18億美元（約新台幣566億元）"
+# German
+extract_numbers("Die Investition beträgt 2,7 Milliarden Dollar")
+# [NumVal(value=2_700_000_000, currency='USD', magnitude='B')]
 
-# Or any target currency
-from numlint import convert_currency
-jpy = convert_currency(100, "USD", "JPY")  # 100 USD → ~15,900 JPY
+# Russian
+extract_numbers("Бюджет составляет 450 млрд рублей")
+# [NumVal(value=450_000_000_000, currency='RUB', magnitude='B')]
+
+# Japanese
+extract_numbers("予算は1兆8000億円")
+# [NumVal(value=1_800_000_000_000, currency='JPY', magnitude='T')]
+
+# Korean
+extract_numbers("투자액 464만 달러")
+# [NumVal(value=4_640_000, currency='USD', magnitude='M')]
+
+# Hindi/Indian English
+extract_numbers("The project costs 1.5 lakh crore rupees")
+# [NumVal(value=15_000_000_000_000, currency='INR', magnitude='T')]
+
+# Arabic
+extract_numbers("الميزانية 500 مليون دولار")
+# [NumVal(value=500_000_000, currency='USD', magnitude='M')]
+
+# Convert between any currencies (live rates)
+convert_currency(100, "USD", "JPY")   # → ~15,900
+convert_currency(100, "EUR", "GBP")   # → ~86
+convert_currency(1.8e9, "USD", "TWD") # → ~56,600,000,000
 ```
 
 ## Modules
