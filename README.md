@@ -8,10 +8,11 @@ Catches magnitude errors, unit conversion mistakes, and financial data discrepan
 
 LLMs and human translators routinely make number errors that are invisible to proofreaders:
 
-- "1.8 billion" → "1.8萬" (off by 5 orders of magnitude)
-- "500 miles" → "500公里" (not converted, should be 805km)
-- "$45 billion" → "45億美元" (should be 450億)
-- "104°F" → "104度" (Fahrenheit not converted to Celsius)
+- "1.8 billion" → "1.8 million" (off by 3 orders of magnitude)
+- "3,5 milliards" → "3.5 million" (French billion → English million)
+- "500 miles" → "500 km" (not converted, should be 805 km)
+- "$45 billion" → "$45 million" in translation (dropped a magnitude)
+- "104°F" → "104°C" (Fahrenheit not converted to Celsius)
 
 These errors are **catastrophic in news, finance, and legal documents** but trivially detectable with arithmetic. numlint does that arithmetic across 28 languages.
 
@@ -103,9 +104,11 @@ convert_currency(1.8e9, "USD", "TWD") # → ~56,600,000,000
 Cross-validates numbers between multilingual sources and target output. Returns list of `(severity, issue, suggestion)` tuples.
 
 Checks:
-- Magnitude mismatches (billion → 萬 instead of 億)
-- Number format anomalies (1,50億 — comma in wrong place)
+- Magnitude mismatches (billion → million, milliard → million)
+- Number format anomalies
 - Currency mismatches (source USD, target says EUR)
+
+Works with any target language — not just Chinese.
 
 ### `extract_numbers(text) → list[NumVal]`
 
@@ -118,27 +121,28 @@ Extracts all significant numbers from text in any of 28 supported languages. Han
 - European comma decimals (3,5 = 3.5)
 - Spanish/Portuguese thousand dots (1.800 = 1800)
 
-### `verify_measurements(source_texts, zh_body)`
+### `verify_measurements(source_texts, target_body)`
 
 Catches unconverted imperial→metric units:
-- 500 miles written as 500公里 (should be 805)
-- 104°F written as 104度 (should be 40°C)
+- 500 miles written as "500 km" (should be 805 km)
+- 104°F written as "104 degrees" (should be 40°C)
+- 200 pounds written as "200 kg" (should be 91 kg)
 
-### `verify_financial_claims(zh_body)`
+### `verify_financial_claims(body)`
 
 Live validation against market data:
-- Stock index levels (道瓊/日經/恒生)
-- Forex rates (美元兌日圓)
+- Stock index levels (Dow Jones, Nikkei, Hang Seng, DAX)
+- Forex rates (USD/JPY, EUR/USD)
 - Oil prices (WTI/Brent)
 
 Uses Yahoo Finance → Twelve Data → Google Finance (fallback chain).
 
-### `verify_domain(source_texts, zh_body)`
+### `verify_domain(source_texts, body)`
 
 Domain-specific plausibility:
-- **Semiconductor**: validates process nodes (3nm, 5nm...), catches nm→公尺 mistranslation
+- **Semiconductor**: validates process nodes (3nm, 5nm...), catches nm mistranslated as meters
 - **Weather**: temperature range checks, °F→°C conversion detection
-- **Calendar**: Buddhist Era (พ.ศ.), Islamic calendar (هـ), 民國/令和 conversion
+- **Calendar**: Buddhist Era (พ.ศ.), Islamic calendar (هـ), ROC/Reiwa era conversion
 - **Air quality**: PM2.5/AQI range validation
 
 ### `convert_currency(value, from_currency, to_currency="TWD")`
@@ -169,10 +173,10 @@ convert_currency(100, "USD", "JPY")  # USD → JPY
 
 The source text contains a significant number that doesn't appear (within ±20% tolerance) in the target text. Common causes:
 - LLM omitted the number entirely
-- Magnitude was wrong (billion → 萬 instead of 億)
+- Magnitude was wrong (billion → million)
 - Number was paraphrased in a way numlint can't parse
 
-**Fix**: Check the target text manually. If the number is there but in a different format, you may need to expand `_ZH_MAG` patterns in `extract.py`.
+**Fix**: Check the target text manually. If the number is there but in a different format, you may need to expand patterns in `extract.py`.
 
 ### False positives on dates/versions
 
