@@ -1,5 +1,10 @@
 # numlint
 
+[![PyPI](https://img.shields.io/pypi/v/numlint.svg)](https://pypi.org/project/numlint/)
+[![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-pytest-brightgreen.svg)](tests/)
+
 Multilingual number & currency verification for translated text.
 
 Catches magnitude errors, unit conversion mistakes, and financial data discrepancies that slip through LLM-based or human translation. Deterministic — no AI, no hallucination.
@@ -16,7 +21,20 @@ LLMs and human translators routinely make number errors that are invisible to pr
 
 These errors are **catastrophic in news, finance, and legal documents** but trivially detectable with arithmetic. numlint does that arithmetic across 28 languages.
 
-## Features
+## Architecture
+
+```
+                         numlint
+                           │
+         ┌─────────┬───────┼───────┬──────────┐
+         │         │       │       │          │
+      extract    verify  currency  finance   domain
+         │         │       │       │          │
+   28-lang     source ↔   live     Yahoo →   semi
+   magnitude   target     FX       Twelve    weather
+   + currency  cross-     rates    Data →    calendar
+   extraction  validate            Google    air quality
+```
 
 | Module | What it does |
 |--------|-------------|
@@ -97,7 +115,7 @@ convert_currency(100, "EUR", "GBP")   # → ~86
 convert_currency(1.8e9, "USD", "TWD") # → ~56,600,000,000
 ```
 
-## Modules
+## API Reference
 
 ### `verify_numbers(source_texts, target_text, target_lang="zh")`
 
@@ -149,6 +167,12 @@ Domain-specific plausibility:
 
 Live exchange rate conversion. 166 currencies supported. Rates cached 6 hours.
 
+### `annotate_twd(text)` / `annotate_metric(text)`
+
+In-place annotation:
+- `annotate_twd("投資額達18億美元")` → `"投資額達18億美元（約新台幣566億元）"`
+- `annotate_metric("500英里")` → `"500英里（約805公里）"`
+
 ## Supported Languages (Number Extraction)
 
 English, French, German, Spanish, Portuguese, Russian, Japanese, Korean, Arabic, Indonesian, Turkish, Italian, Dutch, Vietnamese, Swedish, Danish, Thai, Polish, Romanian, Greek, Hungarian, Finnish, Hebrew, Hindi, Bengali, Urdu, Malay, Czech
@@ -165,6 +189,16 @@ issues = verify_numbers(sources, target, target_lang="en")  # English target
 # Convert to any currency
 convert_currency(100, "USD", "EUR")  # USD → EUR
 convert_currency(100, "USD", "JPY")  # USD → JPY
+```
+
+## Development
+
+```bash
+git clone https://github.com/FakeRocket543/numlint.git
+cd numlint
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest tests/ -v
 ```
 
 ## Troubleshooting
@@ -197,18 +231,9 @@ Edit `src/numlint/extract.py`:
 2. Add currency names to `_CURRENCY_MAP` if needed
 3. Add a test case to `tests/test_basic.py`
 
-## Development
-
-```bash
-git clone https://github.com/FakeRocket543/numlint.git
-cd numlint
-pip install -e ".[dev]"
-pytest tests/ -v
-```
-
 ## License
 
-AGPL-3.0. If you use numlint in a web service, you must open-source your modifications.
+AGPL-3.0-or-later. If you use numlint in a web service, you must open-source your modifications. See [LICENSE](LICENSE).
 
 ## Contributing
 

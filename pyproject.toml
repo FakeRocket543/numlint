@@ -22,11 +22,18 @@ classifiers = [
 dependencies = ["httpx>=0.24"]
 
 [project.optional-dependencies]
-finance = ["httpx>=0.24"]
+dev = ["pytest>=7.0", "ruff>=0.1"]
 
 [project.urls]
-Homepage = "https://git.lcn.tw/felix/numlint"
-Issues = "https://git.lcn.tw/felix/numlint/issues"
+Homepage = "https://github.com/FakeRocket543/numlint"
+Issues = "https://github.com/FakeRocket543/numlint/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/numlint"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
