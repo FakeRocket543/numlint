@@ -105,7 +105,7 @@ class TestVerifyNumbers:
             target_text="這筆交易價值18億美元"
         )
         # Should have no magnitude mismatch warnings
-        mag_issues = [i for i in issues if '量級' in i[1] or '未找到' in i[1]]
+        mag_issues = [i for i in issues if 'magnitude' in i[1] or 'missing' in i[1]]
         assert len(mag_issues) == 0, f"Should not warn on correct translation, got {mag_issues}"
 
 
