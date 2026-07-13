@@ -6,6 +6,25 @@ SV, DA, TH, PL, RO, EL, HU, FI, HE, HI, BN, UR, MS, CZ
 import re
 from typing import NamedTuple
 
+# ── Fullwidth → halfwidth digit normalization ──
+_FW_DIGIT_TABLE = str.maketrans('０１２３４５６７８９．，', '0123456789.,')
+
+def _normalize_fullwidth(text: str) -> str:
+    """Convert fullwidth digits and punctuation to halfwidth."""
+    return text.translate(_FW_DIGIT_TABLE)
+
+
+# ── Japanese compound magnitude patterns ──
+# Order matters: longer patterns first to avoid partial matches
+_JA_COMPOUND_MAG = [
+    ('千億', 1e11),   # 千×億 = 100 billion
+    ('百億', 1e10),   # 百×億 = 10 billion
+    ('十億', 1e9),    # 十×億 = 1 billion
+    ('千万', 1e7),    # 千×万 = 10 million
+    ('百万', 1e6),    # 百×万 = 1 million
+    ('十万', 1e5),    # 十×万 = 100 thousand
+]
+
 class NumVal(NamedTuple):
     raw: str       # original text
     value: float   # normalized value
@@ -90,6 +109,8 @@ _CURRENCY_MAP = {
     '韓元': 'KRW', '韓圜': 'KRW', '盧布': 'RUB', '人民幣': 'CNY', '台幣': 'TWD',
     '新台幣': 'TWD', '澳元': 'AUD', '加元': 'CAD', '印度盧比': 'INR',
     '先令': 'KES',  # context: Kenya shillings
+    # Japanese currency
+    '円': 'JPY',
 }
 
 # Chinese magnitude
@@ -120,6 +141,40 @@ def _normalize_number(raw: str) -> float | None:
 def extract_numbers(text: str) -> list[NumVal]:
     """Extract numbers with magnitude and currency from multilingual source text."""
     results = []
+
+    # ── Normalize fullwidth digits to halfwidth ──
+    text = _normalize_fullwidth(text)
+
+    # ── Japanese compound magnitude pass (6千万, 15百万, 3千億, etc.) ──
+    _ja_compound_re = re.compile(
+        r'(\d+\.?\d*)\s*(千億|百億|十億|千万|百万|十万)'
+    )
+    _ja_compound_cur_re = re.compile(
+        r'(\d+\.?\d*)\s*(千億|百億|十億|千万|百万|十万)\s*(円|ドル|ユーロ|ウォン)'
+    )
+    _ja_cur_map = {'円': 'JPY', 'ドル': 'USD', 'ユーロ': 'EUR', 'ウォン': 'KRW'}
+    _ja_mag_dict = dict(_JA_COMPOUND_MAG)
+
+    for m in _ja_compound_cur_re.finditer(text):
+        val = float(m.group(1))
+        mag_str = m.group(2)
+        cur_str = m.group(3)
+        multiplier = _ja_mag_dict.get(mag_str, 1.0)
+        normalized = val * multiplier
+        mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e9 else ('M' if multiplier >= 1e6 else 'K'))
+        currency = _ja_cur_map.get(cur_str, '')
+        results.append(NumVal(raw=m.group(0), value=normalized, unit='currency' if currency else '', currency=currency, magnitude=mag))
+
+    _ja_matched_positions = {(m.start(), m.end()) for m in _ja_compound_cur_re.finditer(text)}
+    for m in _ja_compound_re.finditer(text):
+        if any(m.start() >= s and m.start() < e for s, e in _ja_matched_positions):
+            continue
+        val = float(m.group(1))
+        mag_str = m.group(2)
+        multiplier = _ja_mag_dict.get(mag_str, 1.0)
+        normalized = val * multiplier
+        mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e9 else ('M' if multiplier >= 1e6 else 'K'))
+        results.append(NumVal(raw=m.group(0), value=normalized, unit='', currency='', magnitude=mag))
 
     # Pattern: optional currency symbol + number + optional magnitude word
     # Handles: $1.8 billion, 3,5 milliards d'euros, 1.7B shillings
@@ -226,12 +281,51 @@ def extract_zh_numbers(zh_body: str) -> list[NumVal]:
     """Extract numbers from Chinese output."""
     results = []
 
-    # Pattern: number + 兆/億/萬 + optional currency
+    # ── Traditional Chinese compound magnitudes (千萬, 百萬, 千億, etc.) ──
+    _ZH_COMPOUND_MAG = {
+        '千億': 1e11, '百億': 1e10, '十億': 1e9,
+        '千萬': 1e7, '百萬': 1e6, '十萬': 1e5,
+    }
+    _zh_compound_cur = '美元|歐元|英鎊|日圓|日元|韓元|盧布|人民幣|台幣|新台幣|澳元|加元|先令|%'
+    _zh_compound_re = re.compile(
+        rf'([\d,]+\.?\d*)\s*(千億|百億|十億|千萬|百萬|十萬)\s*({_zh_compound_cur})?'
+    )
+    _compound_matched_spans = set()
+
+    for m in _zh_compound_re.finditer(zh_body):
+        num_raw = m.group(1).replace(',', '')
+        zh_mag = m.group(2)
+        zh_cur = m.group(3) or ''
+
+        try:
+            val = float(num_raw)
+        except ValueError:
+            continue
+
+        if val == 0:
+            continue
+
+        multiplier = _ZH_COMPOUND_MAG[zh_mag]
+        normalized = val * multiplier
+
+        mag = 'T' if multiplier >= 1e12 else ('B' if multiplier >= 1e9 else ('M' if multiplier >= 1e6 else 'K'))
+
+        currency = _CURRENCY_MAP.get(zh_cur, '')
+        unit_type = 'currency' if currency else ('%' if zh_cur == '%' else '')
+
+        results.append(NumVal(raw=m.group(0).strip(), value=normalized, unit=unit_type, currency=currency, magnitude=mag))
+        _compound_matched_spans.add((m.start(), m.end()))
+
+    # ── Simple magnitudes: number + 兆/億/萬 + optional currency ──
     zh_pattern = re.compile(
-        r'([\d,]+\.?\d*)\s*(兆|億|萬)?\s*(美元|歐元|英鎊|日圓|日元|韓元|盧布|人民幣|台幣|新台幣|澳元|加元|先令|%)?'
+        rf'([\d,]+\.?\d*)\s*(兆|億|萬)?\s*({_zh_compound_cur})?'
     )
 
     for m in zh_pattern.finditer(zh_body):
+        # Skip if already matched by compound pattern
+        if any(m.start() >= s and m.start() < e for s, e in _compound_matched_spans):
+            continue
+
         num_raw = m.group(1).replace(',', '')
         zh_mag = m.group(2) or ''
         zh_cur = m.group(3) or ''

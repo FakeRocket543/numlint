@@ -93,7 +93,7 @@ class TestVerifyNumbers:
         """README: $1.8 billion vs '18萬美元' should warn."""
         issues = verify_numbers(
             source_texts=["The deal is worth $1.8 billion"],
-            zh_body="18萬美元"
+            target_text="18萬美元"
         )
         assert len(issues) > 0, "Should detect mismatch: $1.8B → 18萬"
         assert any('warn' in i[0] for i in issues)
@@ -102,7 +102,7 @@ class TestVerifyNumbers:
         """$1.8 billion → 18億美元 should pass."""
         issues = verify_numbers(
             source_texts=["The deal is worth $1.8 billion"],
-            zh_body="這筆交易價值18億美元"
+            target_text="這筆交易價值18億美元"
         )
         # Should have no magnitude mismatch warnings
         mag_issues = [i for i in issues if '量級' in i[1] or '未找到' in i[1]]
@@ -119,3 +119,52 @@ class TestAnnotateTWD:
         if result != "投資額達18億美元":
             assert "新台幣" in result
             assert "約" in result
+
+
+# ── Fullwidth digits + JP compound magnitudes ──
+
+class TestJapaneseCompound:
+    """Fullwidth digits and compound magnitudes like 千万, 百万."""
+
+    def test_fullwidth_digits(self):
+        """Fullwidth ３万 should be parsed as 30000."""
+        nums = extract_numbers("養殖ウニ３万匹")
+        assert any(abs(n.value - 3e4) < 100 for n in nums), f"Expected ~30000, got {[n.value for n in nums]}"
+
+    def test_senman_yen(self):
+        """6千万円 should parse as 60,000,000 JPY."""
+        nums = extract_numbers("被害６千万円")
+        assert any(abs(n.value - 6e7) < 1e5 for n in nums), f"Expected ~6e7, got {[n.value for n in nums]}"
+        assert any(n.currency == "JPY" for n in nums if abs(n.value - 6e7) < 1e5)
+
+    def test_hyakuman(self):
+        """15百万ドル should parse as 15,000,000 USD."""
+        nums = extract_numbers("被害額は15百万ドル")
+        assert any(abs(n.value - 15e6) < 1e4 for n in nums), f"Expected ~15e6, got {[n.value for n in nums]}"
+
+    def test_senoku(self):
+        """3千億円 should parse as 300,000,000,000."""
+        nums = extract_numbers("売上高は3千億円")
+        assert any(abs(n.value - 3e11) < 1e8 for n in nums), f"Expected ~3e11, got {[n.value for n in nums]}"
+
+    def test_zh_compound_qianwan(self):
+        """Traditional Chinese 6千萬日圓 should parse correctly."""
+        nums = extract_zh_numbers("損失6千萬日圓")
+        assert any(abs(n.value - 6e7) < 1e5 for n in nums), f"Expected ~6e7, got {[n.value for n in nums]}"
+
+    def test_verify_catches_bare_number(self):
+        """610000000 in output should be flagged as bare large number."""
+        issues = verify_numbers(
+            source_texts=["被害６千万円"],
+            target_text="損失金額超過610000000日圓"
+        )
+        assert any("bare large" in i[1] or "6000萬" in i[1] or "6億" in i[1] for i in issues), f"Should flag 610000000, got {issues}"
+
+    def test_verify_correct_passes(self):
+        """6000萬日圓 should not trigger magnitude warnings."""
+        issues = verify_numbers(
+            source_texts=["被害６千万円"],
+            target_text="損失金額超過6000萬日圓"
+        )
+        mag_issues = [i for i in issues if "6000萬" in i[1] or "bare large" in i[1]]
+        assert len(mag_issues) == 0, f"Should pass clean, got {mag_issues}"

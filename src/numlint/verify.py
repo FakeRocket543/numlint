@@ -60,6 +60,32 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
         if unexpected:
             issues.append(("warn", f"currency mismatch: source {src_currencies}, target {zh_currencies}", "check currency"))
     
+    # 5. Bare large number warning (>8 digits without 億/萬/兆 suffix)
+    if target_lang == "zh":
+        bare_large_re = re.compile(r'(\d{8,})')
+        for m in bare_large_re.finditer(target_text):
+            num_str = m.group(1)
+            end_pos = m.end()
+            after = target_text[end_pos:end_pos+2]
+            if any(mag in after for mag in ('兆', '億', '萬')):
+                continue
+            # Skip date-like patterns
+            if re.match(r'20[012]\d', num_str[:4]):
+                continue
+            try:
+                val = int(num_str)
+            except ValueError:
+                continue
+            if val >= 1e12:
+                suggested = f"{val/1e12:.2f}兆"
+            elif val >= 1e8:
+                suggested = f"{val/1e8:.0f}億"
+            elif val >= 1e4:
+                suggested = f"{val/1e4:.0f}萬"
+            else:
+                continue
+            issues.append(("warn", f"bare large number: {num_str} (should be {suggested})", f"→ {suggested}"))
+
     return issues
 
 
