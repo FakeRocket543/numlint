@@ -168,3 +168,24 @@ class TestJapaneseCompound:
         )
         mag_issues = [i for i in issues if "6000萬" in i[1] or "bare large" in i[1]]
         assert len(mag_issues) == 0, f"Should pass clean, got {mag_issues}"
+
+
+class TestMagnitudeInflation:
+    """Detect when small source numbers get inflated with 萬/億."""
+
+    def test_140_to_14wan(self):
+        """Source 140人 vs Chinese 14萬人 should warn."""
+        issues = verify_numbers(
+            source_texts=["遺族や社員ら約140人が出席"],
+            target_text="遺族與社員約14萬人出席"
+        )
+        assert any("inflation" in i[1] or "膨脹" in i[1] for i in issues), f"Should flag 140→14萬, got {issues}"
+
+    def test_140_correct(self):
+        """Source 140人 vs Chinese 140人 should be clean."""
+        issues = verify_numbers(
+            source_texts=["遺族や社員ら約140人が出席"],
+            target_text="遺族與社員約140人出席"
+        )
+        inflate_issues = [i for i in issues if "inflation" in i[1] or "膨脹" in i[1]]
+        assert len(inflate_issues) == 0, f"Should be clean, got {inflate_issues}"

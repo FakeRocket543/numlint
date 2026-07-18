@@ -51,6 +51,24 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
                 if sn.value >= 1e8 and abs(sn.value / 1e8 - zn.value / 1e4) < 0.5:
                     issues.append(("auto-fix", f"magnitude error: {zn.raw} should be {sn.value/1e8:.2f}×10⁸", f"→ {sn.value/1e8:.2f}×10⁸"))
     
+    # 3b. Magnitude inflation: Chinese has 萬/億 but source has small number
+    # e.g., source: 140人, Chinese: 14萬人 → likely error (140 ≠ 140000)
+    # Use permissive extraction (catch bare numbers without magnitude/currency)
+    _raw_src_nums = [int(m.group()) for m in re.finditer(r"\d+", src_combined) if 2 <= len(m.group()) <= 5]
+    _all_src = src_nums + [NumVal(raw=str(v), value=float(v), unit="", currency="", magnitude="") for v in _raw_src_nums if v >= 10]
+    for zn in zh_nums:
+        if zn.magnitude in ("M", "B", "K") and zn.value >= 1e4:
+            zh_face = zn.value / {"K": 1e4, "M": 1e6, "B": 1e8, "T": 1e12}.get(zn.magnitude, 1e4)
+            for sn in _all_src:
+                if sn.magnitude == "" and 10 <= sn.value < 1e4:
+                    ratio = sn.value / zn.value if zn.value else 0
+                    if 0.8 <= ratio <= 1.2:
+                        pass
+                    elif abs(sn.value - zh_face) < zh_face * 0.3:
+                        issues.append(("warn", f"magnitude inflation: source ~{sn.value:.0f}, target {zn.raw} (~{zn.value:.0f})", f"should be {sn.value:.0f}"))
+                    elif sn.value > 1 and abs(sn.value / 10 - zh_face) < zh_face * 0.3:
+                        issues.append(("warn", f"magnitude inflation: source ~{sn.value:.0f}, target {zn.raw} (~{zn.value:.0f})", f"should be {sn.value:.0f}"))
+
     # 4. Currency mismatch check
     src_currencies = {sn.currency for sn in src_nums if sn.currency}
     zh_currencies = {zn.currency for zn in zh_nums if zn.currency}
