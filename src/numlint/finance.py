@@ -9,6 +9,7 @@ Usage:
 """
 import re
 import time
+
 import httpx
 
 # ── Cache ──
@@ -27,8 +28,8 @@ def _cached_get(url: str, **kwargs) -> dict | None:
             data = r.json()
             _CACHE[url] = (data, now)
             return data
-    except Exception:
-        pass
+    except (httpx.HTTPError, ValueError):
+        return None
     return None
 
 
@@ -137,7 +138,6 @@ def _get_price_google(symbol: str) -> dict | None:
         if r.status_code != 200:
             return None
         # Try to extract price from the HTML/JSON response
-        import json
         # Google Finance embeds data in a script tag
         match = re.search(r'data-last-price="([0-9.]+)"', r.text)
         if not match:
@@ -150,8 +150,8 @@ def _get_price_google(symbol: str) -> dict | None:
                     "prev_close": 0,
                     "currency": "USD",
                 }
-    except Exception:
-        pass
+    except (httpx.HTTPError, ValueError):
+        return None
     return None
 
 

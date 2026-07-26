@@ -225,6 +225,6 @@ if __name__ == "__main__":
     # Test: annotation
     text = "該地區面積達500英里，氣溫高達華氏98度"
     result = annotate_metric(text)
-    print(f"\nTest 4 (標註):")
+    print("\nTest 4 (標註):")
     print(f"  In:  {text}")
     print(f"  Out: {result}")

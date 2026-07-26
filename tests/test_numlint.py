@@ -1,8 +1,6 @@
 """Tests for numlint — covers README examples and edge cases."""
-import pytest
-from numlint import extract_numbers, verify_numbers, annotate_twd, NumVal
+from numlint import annotate_twd, extract_numbers, verify_numbers
 from numlint.extract import extract_zh_numbers
-
 
 # ── extract_numbers ──
 

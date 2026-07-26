@@ -48,8 +48,8 @@ _MAG_PATTERNS = {
     # Russian/Ukrainian
     'трлн': 1e12, 'млрд': 1e9, 'млн': 1e6, 'тыс': 1e3,
     'триллион': 1e12, 'миллиард': 1e9, 'миллион': 1e6, 'тысяч': 1e3,
-    # Japanese
-    '兆': 1e12, '億': 1e8, '万': 1e4,
+    # Japanese / Traditional Chinese
+    '兆': 1e12, '億': 1e8, '万': 1e4, '萬': 1e4,
     # Korean
     '조': 1e12, '억': 1e8, '만': 1e4,
     # Arabic
@@ -225,6 +225,16 @@ def extract_numbers(text: str) -> list[NumVal]:
             currency = _CURRENCY_MAP.get(cur_sym, '')
         elif unit_word:
             currency = _CURRENCY_MAP.get(unit_word, '')
+
+        # If a magnitude word was found but no currency yet, look for a currency word nearby
+        if mag and not currency:
+            tail = text[m.end():m.end() + 50]
+            for cur_word, iso in sorted(_CURRENCY_MAP.items(), key=lambda x: -len(x[0])):
+                if not iso or not any(c.isalpha() for c in cur_word):
+                    continue
+                if re.search(rf"(?:^|\W|d'){re.escape(cur_word)}s?\b", tail, re.IGNORECASE):
+                    currency = iso
+                    break
 
         # Special: Indian crore = 10M
         if unit_word in ('crore', 'crores'):

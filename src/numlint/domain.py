@@ -4,8 +4,7 @@ Validates that numbers in translated text fall within physically plausible range
 and catches common conversion errors.
 """
 import re
-from datetime import datetime
-
+from datetime import datetime, timezone
 
 # ── Semiconductor process nodes ──
 
@@ -53,7 +52,7 @@ def verify_weather(zh_body: str) -> list[tuple[str, str, str]]:
     for m in re.finditer(r'(?:氣溫|溫度|高溫|低溫)[^\d]{0,10}?(-?\d+\.?\d*)\s*(?:度|°C|℃|攝氏)', zh_body):
         val = float(m.group(1))
         if val < -90 or val > 60:
-            issues.append(("warn", f"temperature out of Earth record range", "確認溫度"))
+            issues.append(("warn", "temperature out of Earth record range", "確認溫度"))
         elif val > 50:
             issues.append(("info", f"溫度 {val}°C extreme high temp, verify", ""))
     
@@ -68,26 +67,26 @@ def verify_weather(zh_body: str) -> list[tuple[str, str, str]]:
     for m in re.finditer(r'(\d+\.?\d*)\s*(?:hPa|百帕|毫巴)', zh_body):
         val = float(m.group(1))
         if val < 870 or val > 1085:
-            issues.append(("warn", f"pressure out of normal range (870-1085)", "確認氣壓"))
+            issues.append(("warn", "pressure out of normal range (870-1085)", "確認氣壓"))
     
     # Wind speed
     for m in re.finditer(r'風速[^\d]{0,5}?(\d+\.?\d*)\s*(?:公里|km)', zh_body):
         val = float(m.group(1))
         if val > 410:
-            issues.append(("warn", f"wind speed exceeds Earth record (≤407)", "確認風速"))
+            issues.append(("warn", "wind speed exceeds Earth record (≤407)", "確認風速"))
     
     # Rainfall
     for m in re.finditer(r'(?:降雨|雨量|降水)[^\d]{0,10}?(\d+\.?\d*)\s*(?:毫米|mm|公釐)', zh_body):
         val = float(m.group(1))
         if val > 1000:
-            issues.append(("warn", f"extreme rainfall, check timeframe", ""))
+            issues.append(("warn", "extreme rainfall, check timeframe", ""))
     
     return issues
 
 
 # ── Calendar / Era conversion ──
 
-_CURRENT_YEAR = datetime.now().year
+_CURRENT_YEAR = datetime.now(timezone.utc).year
 
 # Era offsets (era_year + offset = western_year)
 _ERA_OFFSETS = {

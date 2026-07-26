@@ -1,9 +1,10 @@
 """Currency conversion and target-currency annotation."""
 import re
 import time
-import httpx
-from numlint.extract import _CURRENCY_MAP, _ZH_MAG
 
+import httpx
+
+from numlint.extract import _CURRENCY_MAP, _ZH_MAG
 
 # ── Currency conversion (TWD equivalent annotation) ──
 
@@ -13,23 +14,21 @@ _RATE_CACHE_TIME: float = 0
 
 def _fetch_rates() -> dict:
     """Fetch USD-based exchange rates (cached 6 hours)."""
-    import time
     global _RATE_CACHE, _RATE_CACHE_TIME
     if _RATE_CACHE and time.time() - _RATE_CACHE_TIME < 21600:
         return _RATE_CACHE
     try:
-        import httpx
         r = httpx.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=5)
         if r.status_code == 200:
             _RATE_CACHE = r.json().get("rates", {})
             _RATE_CACHE_TIME = time.time()
-    except Exception:
-        pass
+    except (httpx.HTTPError, ValueError):
+        return _RATE_CACHE
     return _RATE_CACHE
 
 
 def convert_currency(value: float, from_currency: str, to_currency: str = "TWD") -> float | None:
-    """Convert a value from given currency to TWD. Returns None if unavailable."""
+    """Convert a value between currencies. Returns None if unavailable."""
     rates = _fetch_rates()
     if not rates:
         return None
@@ -82,7 +81,7 @@ def annotate_currency_twd(zh_body: str) -> str:
         if not iso:
             return m.group(0)
         
-        twd = convert_to_twd(absolute_val, iso)
+        twd = convert_currency(absolute_val, iso, "TWD")
         if twd is None or twd < 1e4:  # skip tiny amounts
             return m.group(0)
         

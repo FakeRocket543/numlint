@@ -1,11 +1,12 @@
-"""Cross-lingual number verification: source texts vs Chinese output."""
+"""Cross-lingual number verification: source texts vs translated output."""
 import re
-from numlint.extract import extract_numbers, extract_zh_numbers, NumVal, _ZH_MAG
+
+from numlint.extract import NumVal, extract_numbers, extract_zh_numbers
 
 
 def verify_numbers(source_texts: list[str], target_text: str, target_lang: str = "zh") -> list[tuple[str, str, str]]:
-    """Cross-validate numbers between multilingual sources and Chinese output.
-    
+    """Cross-validate numbers between multilingual sources and target-language output.
+
     Returns list of (severity, issue, suggestion).
     """
     issues = []
@@ -64,9 +65,7 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
                     ratio = sn.value / zn.value if zn.value else 0
                     if 0.8 <= ratio <= 1.2:
                         pass
-                    elif abs(sn.value - zh_face) < zh_face * 0.3:
-                        issues.append(("warn", f"magnitude inflation: source ~{sn.value:.0f}, target {zn.raw} (~{zn.value:.0f})", f"should be {sn.value:.0f}"))
-                    elif sn.value > 1 and abs(sn.value / 10 - zh_face) < zh_face * 0.3:
+                    elif abs(sn.value - zh_face) < zh_face * 0.3 or sn.value > 1 and abs(sn.value / 10 - zh_face) < zh_face * 0.3:
                         issues.append(("warn", f"magnitude inflation: source ~{sn.value:.0f}, target {zn.raw} (~{zn.value:.0f})", f"should be {sn.value:.0f}"))
 
     # 4. Currency mismatch check

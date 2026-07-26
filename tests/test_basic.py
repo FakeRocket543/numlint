@@ -1,6 +1,13 @@
 """Basic tests for numlint — covers README examples + edge cases."""
 import pytest
-from numlint import extract_numbers, verify_numbers, annotate_twd, verify_financial_claims, verify_measurements, annotate_metric, NumVal
+
+from numlint import (
+    annotate_metric,
+    annotate_twd,
+    extract_numbers,
+    verify_measurements,
+    verify_numbers,
+)
 
 
 class TestExtract:
@@ -34,7 +41,7 @@ class TestExtract:
 
     def test_skip_years(self):
         nums = extract_numbers("In 2025, the population was 123 million")
-        values = [n.value for n in nums]
+        assert not any(abs(n.value - 2025) < 1 for n in nums)
         # Year filtering is best-effort; main goal is magnitude extraction passes
 
 
