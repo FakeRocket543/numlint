@@ -55,7 +55,15 @@ def verify_numbers(source_texts: list[str], target_text: str, target_lang: str =
     # 3b. Magnitude inflation: Chinese has 萬/億 but source has small number
     # e.g., source: 140人, Chinese: 14萬人 → likely error (140 ≠ 140000)
     # Use permissive extraction (catch bare numbers without magnitude/currency)
-    _raw_src_nums = [int(m.group()) for m in re.finditer(r"\d+", src_combined) if 2 <= len(m.group()) <= 5]
+    # Exclude bare numbers already covered by a magnitude extraction (e.g., "464" in "464만")
+    _covered_spans = []
+    for _sn in src_nums:
+        _idx = src_combined.find(_sn.raw)
+        if _idx >= 0:
+            _covered_spans.append((_idx, _idx + len(_sn.raw)))
+    _raw_src_nums = [int(m.group()) for m in re.finditer(r"\d+", src_combined)
+                     if 2 <= len(m.group()) <= 5
+                     and not any(_s <= m.start() < _e for _s, _e in _covered_spans)]
     _all_src = src_nums + [NumVal(raw=str(v), value=float(v), unit="", currency="", magnitude="") for v in _raw_src_nums if v >= 10]
     for zn in zh_nums:
         if zn.magnitude in ("M", "B", "K") and zn.value >= 1e4:
